@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TeX Live Preview</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+  :root {
+    --bg: #e9edf2; --bar: #ffffff; --text: #1d2733; --muted: #66727f;
+    --border: #d4dae1; --accent: #1f4e79; --accent-text: #ffffff;
+    --ok: #2e7d32; --err: #c62828; --busy: #e0a100;
+    --page-shadow: 0 1px 4px rgba(0,0,0,.18);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1b1f24; --bar: #252b32; --text: #e6e9ed; --muted: #9aa4ae;
+      --border: #38414b; --accent: #5b9bd5; --accent-text: #0f1a26;
+      --page-shadow: 0 1px 6px rgba(0,0,0,.6);
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  header { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; gap: 8px 14px;
+           align-items: center; padding: 8px 16px; background: var(--bar);
+           border-bottom: 1px solid var(--border); }
+  nav { display: flex; flex-wrap: wrap; gap: 4px; padding: 3px; border: 1px solid var(--border); border-radius: 8px; }
+  nav[hidden] { display: none; }
+  nav button { display: flex; align-items: center; gap: 7px; padding: 4px 12px; border: 0;
+               border-radius: 6px; background: transparent; }
+  nav button[aria-selected="true"] { background: var(--accent); color: var(--accent-text); font-weight: 600; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
+  .dot.ok { background: var(--ok); } .dot.err { background: var(--err); }
+  .dot.busy { background: var(--busy); animation: pulse 1s infinite; }
+  nav button[aria-selected="true"] .dot { box-shadow: 0 0 0 2px var(--accent-text); }
+  @keyframes pulse { 50% { opacity: .35; } }
+  #name { font-weight: 600; }
+  #name[hidden] { display: none; }
+  #state { color: var(--muted); flex: 1; min-width: 180px; white-space: nowrap;
+           overflow: hidden; text-overflow: ellipsis; }
+  button, a.btn { font: inherit; color: var(--text); background: transparent; border: 1px solid var(--border);
+                  border-radius: 6px; padding: 3px 10px; cursor: pointer; text-decoration: none; }
+  nav button { border: 0; }
+  button:hover, a.btn:hover { background: var(--bg); }
+  nav button[aria-selected="true"]:hover { background: var(--accent); }
+  #zoom { min-width: 3.5em; text-align: center; color: var(--muted); }
+  #log { display: none; margin: 16px; padding: 12px 16px; max-height: 45vh; overflow: auto;
+         background: var(--bar); border: 1px solid var(--err); border-radius: 8px;
+         font: 12px/1.45 ui-monospace, Menlo, monospace; white-space: pre-wrap; }
+  #pages { display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 16px; }
+  #pages canvas { background: #fff; box-shadow: var(--page-shadow); max-width: 100%; height: auto; }
+  #empty { color: var(--muted); padding: 40px; text-align: center; }
+</style>
+</head>
+<body>
+<header>
+  <span id="name" hidden></span>
+  <nav id="tabs" role="tablist" aria-label="Documents" hidden></nav>
+  <span id="state">Waiting for first build…</span>
+  <button id="out" title="Zoom out">−</button>
+  <span id="zoom">100%</span>
+  <button id="in" title="Zoom in">+</button>
+  <a class="btn" id="dl" href="#" download>PDF</a>
+</header>
+<pre id="log"></pre>
+<div id="pages"><div id="empty">Building…</div></div>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+const $ = (id) => document.getElementById(id);
+const DPR = window.devicePixelRatio || 1;
+let zoom = 1.25;                 // 1.25 renders at "100%"
+let docs = {}, order = [];
+let current = null;              // id of the visible document
+const shown = {};                // id -> version currently drawn
+const scrollAt = {};             // id -> remembered scroll position
+let renderToken = 0;
+
+const store = {
+  get: (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } },
+  set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} },
+};
+
+function dotClass(d) { return d.building ? "busy" : d.ok === false ? "err" : d.ok ? "ok" : ""; }
+
+function drawTabs() {
+  const nav = $("tabs");
+  nav.hidden = order.length < 2;
+  $("name").hidden = order.length >= 2;
+  if (order.length < 2) { $("name").textContent = current ? docs[current].label : ""; return; }
+  if (nav.childElementCount !== order.length) {
+    nav.replaceChildren(...order.map((id) => {
+      const b = document.createElement("button");
+      b.role = "tab"; b.dataset.id = id;
+      b.innerHTML = '<span class="dot"></span><span class="label"></span>';
+      b.onclick = () => select(id);
+      return b;
+    }));
+  }
+  for (const b of nav.children) {
+    const d = docs[b.dataset.id];
+    b.setAttribute("aria-selected", String(b.dataset.id === current));
+    b.querySelector(".label").textContent = d.label;
+    b.querySelector(".dot").className = "dot " + dotClass(d);
+  }
+}
+
+function drawState() {
+  const d = docs[current];
+  if (!d) return;
+  if (d.building) $("state").textContent = "Building with Tectonic…";
+  else if (d.ok === false) $("state").textContent = `Build failed at ${d.built_at}. Showing the last good PDF.`;
+  else if (d.ok) $("state").textContent = `Built at ${d.built_at} in ${d.seconds}s · watching for changes`;
+  else $("state").textContent = "Waiting for first build…";
+  const log = $("log");
+  log.style.display = d.ok === false ? "block" : "none";
+  log.textContent = d.ok === false ? d.log : "";
+  $("dl").href = `pdf/${current}.pdf?dl=1`;
+}
+
+async function render(id) {
+  const token = ++renderToken;
+  const version = docs[id].version;
+  const pdf = await pdfjsLib.getDocument({ url: `pdf/${id}.pdf?v=${version}` }).promise;
+  const frag = document.createDocumentFragment();
+  for (let n = 1; n <= pdf.numPages; n++) {
+    const page = await pdf.getPage(n);
+    const vp = page.getViewport({ scale: zoom * DPR });
+    const canvas = document.createElement("canvas");
+    canvas.width = vp.width; canvas.height = vp.height;
+    canvas.style.width = `${vp.width / DPR}px`;
+    await page.render({ canvasContext: canvas.getContext("2d"), viewport: vp }).promise;
+    if (token !== renderToken) return;           // a newer render started
+    frag.appendChild(canvas);
+  }
+  $("pages").replaceChildren(frag);
+  window.scrollTo(0, scrollAt[id] || 0);
+  shown[id] = version;
+  $("zoom").textContent = `${Math.round(zoom * 100 / 1.25)}%`;
+}
+
+function select(id) {
+  if (!docs[id] || id === current) return;
+  if (current) scrollAt[current] = window.scrollY;
+  current = id;
+  store.set("tex-preview-tab", id);
+  history.replaceState(null, "", "#" + id);
+  drawTabs(); drawState();
+  if (docs[id].ok) render(id);
+}
+
+async function poll() {
+  try {
+    const s = await (await fetch("status.json", { cache: "no-store" })).json();
+    docs = s.docs; order = s.order;
+    if (s.title && document.title !== s.title) document.title = s.title;
+    if (!current) {
+      const wanted = [location.hash.slice(1), store.get("tex-preview-tab"), s.default, order[0]];
+      current = wanted.find((w) => w && docs[w]);
+      history.replaceState(null, "", "#" + current);
+    }
+    drawTabs(); drawState();
+    const d = docs[current];
+    if (d.ok && shown[current] !== d.version) {
+      scrollAt[current] = shown[current] === undefined ? 0 : window.scrollY;
+      await render(current);
+    }
+  } catch (e) {
+    $("state").textContent = "Preview server not reachable";
+  }
+  setTimeout(poll, 800);
+}
+
+function setZoom(z) {
+  zoom = Math.min(3, Math.max(0.5, z));
+  if (current && docs[current] && docs[current].ok) { scrollAt[current] = window.scrollY; render(current); }
+}
+$("in").onclick = () => setZoom(zoom + 0.125);
+$("out").onclick = () => setZoom(zoom - 0.125);
+window.addEventListener("hashchange", () => select(location.hash.slice(1)));
+poll();
+</script>
+</body>
+</html>

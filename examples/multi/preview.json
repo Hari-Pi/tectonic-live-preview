@@ -1,0 +1,4 @@
+{
+  "shared": ["shared"],
+  "labels": { "report/report.tex": "Quarterly Report", "letter/letter.tex": "Customer Letter" }
+}
