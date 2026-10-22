@@ -47,7 +47,8 @@
   nav button { border: 0; }
   button:hover, a.btn:hover { background: var(--bg); }
   nav button[aria-selected="true"]:hover { background: var(--accent); }
-  a.btn[hidden] { display: none; }
+  button[hidden] { display: none; }
+  #bw[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
   #zoom { min-width: 3.5em; text-align: center; color: var(--muted); }
   #log { display: none; margin: 16px; padding: 12px 16px; max-height: 45vh; overflow: auto;
          background: var(--bar); border: 1px solid var(--err); border-radius: 8px;
@@ -66,8 +67,8 @@
   <button id="out" title="Zoom out">−</button>
   <span id="zoom">100%</span>
   <button id="in" title="Zoom in">+</button>
+  <button id="bw" hidden aria-pressed="false" title="Show the black-and-white copy">B&amp;W</button>
   <a class="btn" id="dl" href="#" download>PDF</a>
-  <a class="btn" id="dlbw" href="#" download hidden title="Download the black-and-white copy">B&amp;W</a>
 </header>
 <pre id="log"></pre>
 <div id="pages"><div id="empty">Building…</div></div>
@@ -85,11 +86,15 @@ let current = null;              // id of the visible document
 const shown = {};                // id -> version currently drawn
 const scrollAt = {};             // id -> remembered scroll position
 let renderToken = 0;
+let bwOn = false;                // B&W toggle; applies to documents that have a black-and-white copy
 
 const store = {
   get: (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } },
   set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} },
 };
+
+const useBw = (id) => bwOn && docs[id] && docs[id].bw;
+const want = (id) => docs[id].version + (useBw(id) ? "|bw" : "");   // what should be on screen
 
 function dotClass(d) { return d.building ? "busy" : d.ok === false ? "err" : d.ok ? "ok" : ""; }
 
@@ -141,17 +146,17 @@ function drawState() {
   const log = $("log");
   log.style.display = d.ok === false ? "block" : "none";
   log.textContent = d.ok === false ? d.log : "";
-  $("dl").href = `pdf/${current}.pdf?dl=1`;
-  $("dlbw").hidden = !d.bw;
-  $("dlbw").href = `pdf/${current}.pdf?bw=1&dl=1`;
+  $("dl").href = `pdf/${current}.pdf?dl=1${useBw(current) ? "&bw=1" : ""}`;
+  $("bw").hidden = !d.bw;
+  $("bw").setAttribute("aria-pressed", String(!!useBw(current)));
 }
 
 async function render(id) {
   const token = ++renderToken;
-  const version = docs[id].version;
+  const version = want(id);
   let pdf;
   try {
-    pdf = await pdfjsLib.getDocument({ url: `pdf/${id}.pdf?v=${version}` }).promise;
+    pdf = await pdfjsLib.getDocument({ url: `pdf/${id}.pdf?v=${version}${useBw(id) ? "&bw=1" : ""}` }).promise;
   } catch (e) {   // the server is up but this PDF is missing or still being written: say so and retry on the next poll
     $("state").textContent = "PDF not available yet (it may be rebuilding). Retrying…";
     return;
@@ -197,7 +202,7 @@ async function poll() {
     }
     drawTabs(); drawState();
     const d = docs[current];
-    if (d.ok && shown[current] !== d.version) {
+    if (d.ok && shown[current] !== want(current)) {
       scrollAt[current] = shown[current] === undefined ? 0 : window.scrollY;
       await render(current);
     }
@@ -211,6 +216,11 @@ function setZoom(z) {
   zoom = Math.min(3, Math.max(0.5, z));
   if (current && docs[current] && docs[current].ok) { scrollAt[current] = window.scrollY; render(current); }
 }
+$("bw").onclick = () => {
+  bwOn = !bwOn;
+  store.set("tex-preview-bw", bwOn ? "1" : "");
+  if (current) { drawState(); scrollAt[current] = window.scrollY; if (docs[current].ok) render(current); }
+};
 $("in").onclick = () => setZoom(zoom + 0.125);
 $("out").onclick = () => setZoom(zoom - 0.125);
 $("group").onchange = (e) => {
@@ -219,6 +229,7 @@ $("group").onchange = (e) => {
   const first = visible()[0];
   if (first) select(first); else drawTabs();
 };
+bwOn = !!store.get("tex-preview-bw");
 window.addEventListener("hashchange", () => select(location.hash.slice(1)));
 poll();
 </script>

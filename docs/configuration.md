@@ -37,7 +37,7 @@ The previewer reads `preview.json` from the folder you run it in, or from a file
 | `exclude` | list | none | `--exclude` | Folder names to skip while scanning |
 | `labels` | object | derived from file names | none | Tab names, keyed by the path of the `.tex` file |
 | `groups` | object | none | none | Dropdown groups: `{ "folder": "Dropdown name" }`. See [Groups](#groups) |
-| `bw` | object | none | none | Ready-made black-and-white copies: `{ "doc.tex": "path/to/doc-bw.pdf" }`. Adds a **B&W** download button when the file exists |
+| `bw` | object | none | none | Ready-made black-and-white copies: `{ "doc.tex": "path/to/doc-bw.pdf" }`. Adds a **B&W** toggle when the file exists |
 | `copyPdf` | true/false | `false` | `--copy-pdf` | Copy each PDF next to its source |
 | `open` | true/false | `false` | `--open` | Open the browser on start |
 | `select` | text | first document | `--select` | Id of the document to show first |

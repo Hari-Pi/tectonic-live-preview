@@ -83,7 +83,7 @@ Many documents for different clients or colleges? Add `"groups"` to `preview.jso
 
 - **Group dropdown** (only when `groups` is configured) picks which set of documents the tabs show.
 - **Tabs** switch between documents. The dot on a tab shows its build state: green is good, amber is building, red means the last build failed.
-- **B&W** (only when the `bw` setting points at a copy) downloads the black-and-white version.
+- **B&W** toggle (only when the `bw` setting points at a copy) switches the page, and the **PDF** download, between colour and black and white. It remembers your choice.
 - **+ / −** zoom. **PDF** downloads the document you are looking at.
 - The address shows the current document (for example `#report`), so you can bookmark or share a link to it.
 - If a build fails, the error log appears at the top and the previous PDF stays visible.
