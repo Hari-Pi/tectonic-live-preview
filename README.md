@@ -77,9 +77,13 @@ Now a change inside `common/` rebuilds every document, while a change inside one
 
 Every option can also live in a `preview.json`, which is handy for a project you open often. See [docs/configuration.md](docs/configuration.md).
 
+Many documents for different clients or colleges? Add `"groups"` to `preview.json` and the page gets a dropdown to pick one group at a time, instead of one long row of tabs. See [Groups](docs/configuration.md#groups).
+
 ### In the browser
 
+- **Group dropdown** (only when `groups` is configured) picks which set of documents the tabs show.
 - **Tabs** switch between documents. The dot on a tab shows its build state: green is good, amber is building, red means the last build failed.
+- **B&W** (only when the `bw` setting points at a copy) downloads the black-and-white version.
 - **+ / −** zoom. **PDF** downloads the document you are looking at.
 - The address shows the current document (for example `#report`), so you can bookmark or share a link to it.
 - If a build fails, the error log appears at the top and the previous PDF stays visible.

@@ -17,6 +17,7 @@ The previewer reads `preview.json` from the folder you run it in, or from a file
     "papers/thesis.tex": "Thesis",
     "letters/offer.tex": "Offer Letter"
   },
+  "groups": { "papers": "Papers", "letters": "Letters" },
   "copyPdf": false,
   "open": true,
   "select": "papers-thesis",
@@ -35,11 +36,34 @@ The previewer reads `preview.json` from the folder you run it in, or from a file
 | `shared` | list | none | `--shared` | Folders whose files affect every document |
 | `exclude` | list | none | `--exclude` | Folder names to skip while scanning |
 | `labels` | object | derived from file names | none | Tab names, keyed by the path of the `.tex` file |
+| `groups` | object | none | none | Dropdown groups: `{ "folder": "Dropdown name" }`. See [Groups](#groups) |
+| `bw` | object | none | none | Ready-made black-and-white copies: `{ "doc.tex": "path/to/doc-bw.pdf" }`. Adds a **B&W** download button when the file exists |
 | `copyPdf` | true/false | `false` | `--copy-pdf` | Copy each PDF next to its source |
 | `open` | true/false | `false` | `--open` | Open the browser on start |
 | `select` | text | first document | `--select` | Id of the document to show first |
 | `engineArgs` | list | none | `--engine-args` | Extra arguments passed to Tectonic |
 | `interval` | number | `0.4` | `--interval` | Seconds between checks for saved changes |
+
+## Groups
+
+When you keep documents for several clients, colleges or projects in one preview, tabs get crowded. Add `groups` and the page shows a **dropdown** in the header instead: pick a group and only its documents appear as tabs.
+
+```json
+{
+  "paths": ["."],
+  "groups": {
+    "college-a": "College A",
+    "college-b": "College B",
+    "letterhead": "Company letterhead"
+  }
+}
+```
+
+- Each key is a folder (relative to the settings file). A document belongs to the first group whose folder contains it.
+- Documents that match no folder go to an **Other** group.
+- The order of the dropdown is the order in the file.
+- The page remembers the last group you picked, and opening a link to a document (for example `#college-a-report`) switches to that document's group.
+- With zero or one group the dropdown is not shown, so nothing changes for simple setups.
 
 ## Document ids
 

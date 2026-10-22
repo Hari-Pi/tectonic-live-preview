@@ -31,6 +31,7 @@ lock = threading.Lock()
 docs = {}          # slug -> {label, tex, dir, pdf}
 status = {}        # slug -> build state, served as JSON
 shared_dirs = []   # directories whose files affect every document
+group_order = []   # dropdown entries (empty = no groups configured)
 settings = {}
 
 
@@ -180,16 +181,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self.send(200, f.read(), "text/html; charset=utf-8")
         if path == "/status.json":
             with lock:
-                body = json.dumps({"title": settings["title"], "order": list(docs),
+                for slug, d in docs.items():
+                    status[slug]["bw"] = bool(d["bw"] and os.path.isfile(d["bw"]))
+                body = json.dumps({"title": settings["title"], "order": list(docs), "groups": group_order,
                                    "default": settings["default"], "docs": status}).encode()
             return self.send(200, body, "application/json")
         if path.startswith("/pdf/") and path.endswith(".pdf"):
             doc = docs.get(path[len("/pdf/"):-len(".pdf")])
-            if doc and os.path.isfile(doc["pdf"]):
+            query = parse_qs(url.query)
+            pdf = doc and (doc["bw"] if "bw" in query else doc["pdf"])   # ?bw=1 -> the ready-made black-and-white copy
+            if pdf and os.path.isfile(pdf):
                 extra = {}
-                if "dl" in parse_qs(url.query):
-                    extra["Content-Disposition"] = f'attachment; filename="{os.path.basename(doc["pdf"])}"'
-                with open(doc["pdf"], "rb") as f:
+                if "dl" in query:
+                    extra["Content-Disposition"] = f'attachment; filename="{os.path.basename(pdf)}"'
+                with open(pdf, "rb") as f:
                     return self.send(200, f.read(), "application/pdf", extra)
         self.send(404, b"Not found", "text/plain")
 
@@ -242,6 +247,10 @@ def main():
     shared_dirs.extend(os.path.abspath(p) for p in args.shared)
     shared_dirs.extend(os.path.abspath(os.path.join(base, p)) for p in cfg.get("shared", []))
     labels = {os.path.abspath(os.path.join(base, k)): v for k, v in cfg.get("labels", {}).items()}
+    # "bw": {"doc.tex": "path/to/doc-bw.pdf"}; adds a B&W button for documents whose copy exists
+    bw_pdfs = {os.path.abspath(os.path.join(base, k)): os.path.abspath(os.path.join(base, v)) for k, v in cfg.get("bw", {}).items()}
+    # "groups": {"folder": "Dropdown name"}; a document belongs to the first folder that contains it
+    groups = [(os.path.abspath(os.path.join(base, k)), v) for k, v in cfg.get("groups", {}).items()]
 
     found = find_documents(paths, exclude)
     if not found:
@@ -250,10 +259,13 @@ def main():
     for tex in found:
         slug = make_slug(tex, os.getcwd(), used)
         d = os.path.dirname(tex)
+        group = next((name for folder, name in groups if tex.startswith(folder + os.sep)), "Other" if groups else None)
         docs[slug] = {"label": labels.get(tex) or make_label(tex, found), "tex": tex, "dir": d,
-                      "pdf": os.path.join(d, "build", os.path.splitext(os.path.basename(tex))[0] + ".pdf")}
-        status[slug] = {"label": docs[slug]["label"], "version": 0, "ok": None, "building": False,
+                      "pdf": os.path.join(d, "build", os.path.splitext(os.path.basename(tex))[0] + ".pdf"),
+                      "bw": bw_pdfs.get(tex)}
+        status[slug] = {"label": docs[slug]["label"], "group": group, "version": 0, "ok": None, "building": False,
                         "log": "", "built_at": None, "seconds": None}
+    group_order[:] = [n for n in dict.fromkeys([n for _, n in groups] + ["Other"]) if any(s["group"] == n for s in status.values())]
     if settings["default"] and settings["default"] not in docs:
         sys.exit(f"Unknown document id '{settings['default']}'. Available: {', '.join(docs)}")
 
